@@ -209,11 +209,13 @@ chatbot("Stop").
 %%		keywords recibe X (palabra a buscar) y dependiendo de en que lista se
 %%		encuentre, retorna un átomo en particular, que señala la operación a hacer.
 keywords(X,searchSmth) :- member(X, ["sabes","conoces","reconoces","conoce","reconoce","sabe","quiero","ves",
-										"veo","dame"]).
+									"veo","dame"]).
 keywords(X,searchAnimeOrGenre) :- member(X, ["anime","animé","genero","género"]).
 keywords(X,searchRating) :- member(X,["rating","interesante","bueno","malo"]).
 keywords(X,add) :- member(X,["agregar","incluir","add"]).
 keywords(X,bye) :- member(X,["chao","adios","bye","halt"]).
+keywords(X,searchAnime) :- convertToUpperFstLetterString(X,M),anime(M).
+keywords(X,searchGenre) :- convertToUpperFstLetterString(X,M),genero(M).
 
 % == Funcion para encontrar la primera palabra clave
 getKeywords([X|XS],Result,XS) :- keywords(X,Result),!.
@@ -248,11 +250,12 @@ redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
 redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
 									concatStrListUpperFstLetter(M,X),
 									\+(anime(X)),
-									dontKnowAnime(X),redirect(addAnime,[]).
+									dontKnowAnime(X),redirect(addAnime,[X]).
 %%%%% 		Para reconocer genero o, en caso contrario, agregar.
 redirect(searchSmth,[Word|X]) :- (Word=="genero";Word=="género"),
 									concatStrListUpperFstLetter(X,M), genero(M),
-									iKnowItGenre(M),red_continue.
+									iKnowItGenre(M),
+									red_continue.
 redirect(searchSmth,[Word|X]) :- (Word=="genero";Word=="género"),
 									concatStrListUpperFstLetter(X,M), \+(genero(M)),
 									dontKnowGenre(M),readln(Info),
@@ -275,9 +278,11 @@ redirect(add,[Word|M]) :- (Word=="genero";Word=="género"),
 							genero(X),
 							iKnowThatAlready(X,"género"),red_continue.
 %%%%%		Agregar un anime dado sus datos, solo si son validos, de lo contrario redireccionar a fallo.
-redirect(addAnime,_) :- askPopularityRating, readln(Info),
+redirect(addAnime,[X]) :- askPopularityRatingGenre, readln(Info),
 						getNumberFromAtomList(Info,Rat),
-						findPopularity(Info,Pop),checkAnimeDetails(Rat,Pop),red_continue.
+						findPopularity(Info,Pop),
+						findGenre(Info,Genre),
+						checkAnimeDetails(X,Rat,Pop,[Genre]),red_continue.
 %%%%%		Agregar un genero, solo si el usuario confirma.
 redirect(addGenre,_) :- write("agregado genero"),nl,red_continue.
 redirect(bye,_) :- confirmExit;(iCoudlntLeave,red_continue).
@@ -297,20 +302,30 @@ red_fin :- chatbot("Stop").
 
 % Confirmar salida del programa
 confirmExit :- wannaLeaveAlready, readln(X),convertAtomListToStr(X,M),getHeadTail(M,Str,_),(sayYes(Str);letMeGo(Str)),
-			   reallySureWannaLeave, readln(P),convertAtomListToStr(P,M2),getHeadTail(M2,Str2,_),(sayYes(Str2);letMeGo(Str2)),
+			   reallySureWannaLeave, readln(P),convertAtomListToStr(P,Mx),getHeadTail(Mx,Strx,_),(sayYes(Strx);letMeGo(Strx)),
 			   pleaseLetMeGo, red_fin.
 
+%Imprimir elementos de una lista
+printList([]).
+printList([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop), rating(L,Rat),
+						write("* "),write(L),
+						write(" :   rating="),write(Rat),
+						write(",  "),write(Pop),write("."),
+						nl,printList(List).
 
-					
+% Preguntar si agregar anime al genero
+askAddToGenre(GenreName) :- readln(X),convertAtomListToStr(X,M),getHeadTail(M,Str,_),sayYes(Str),
+							redirect(addAnime,GenreName).
 
-% Evaluar características de un anime y redireccionar a agregar si datos correctos, de lo contrario fail
-checkAnimeDetails(Rat,Pop) :- between(0,5,Rat),write("added anime with "),write(Pop),nl.
-checkAnimeDetails(Rat,_) :- \+(between(0,5,Rat)),animeDetailsError.
+% Evaluar características dadas de un anime y redireccionar a agregar si datos correctos, de lo contrario fail
+checkAnimeDetails(Anime,Rat,Pop,Genres) :- agregarConPop(Anime,Rat,Pop,Genres).
+checkAnimeDetails(Anime,Rat,_,Genres) :- agregarSinPop(Anime,Rat,Genres).
+checkAnimeDetails(_,_,_) :- animeDetailsError.
 
 % Palabras afirmativas
 sayYes(X) :- sub_string(X,_,_,_,Atom),member(Atom,["sí","si","yes","claro","dale","of course","si quieres"]).
 
-% Let me go
+% Palabras para terminar el chatbot
 letMeGo(X) :- sub_string(X,_,_,_,Atom),member(Atom,["por favor dejame ir", "sueltame por favor", "ya basta"]).
 
 % Encontrar elemento random de una lista.
@@ -398,6 +413,14 @@ getLowerPopularity(S,Number) :- \+(sub_string(S,_,_,_,"muy poco conocido")),
 								sub_string(S,_,_,_,"conocido"),
 								giveStrPopularity(Number,"conocido").
 
+% Encontrar el genero del input del usuario
+findGenre(Info,Genre) :- atomic_list_concat(Info,' ',Atom),downcase_atom(Atom,AtDown),
+						 atom_string(AtDown,Str), sub_string(Str,_,_,_,X),
+						 member(X,["género","genero","genre"]),
+						 convertAtomListToStr(Info, L),
+						 getGenre(L,Genre).
+getGenre([X,Genre|_],Genre) :- member(X,["género","genero","genre"]),
+								\+(member(Genre,[".",",",""," "])),!.
 
 
 
@@ -447,12 +470,30 @@ iKnowIt(Name,Rating,Popularity) :- write("Pues sí lo conozco. "),write(Name),wr
 									write("."),nl.
 
 % Conozco ese genero
-iKnowItGenre(GenreName) :- write("Conozco ese género. Actualmente tengo estos anime en la sección "),
-							write(GenreName),nl.
+iKnowItGenre(GenreName) :- findall(X,anime(X),L),filtrarGenero(GenreName,L,Result),
+							length(Result,Length),iKnowItGenre(GenreName,Length,Result).
+iKnowItGenre(GenreName,0,_) :- write("Conozco ese género, pero actualmente no conozco ningun anime de esa sección."),nl,
+							 askAddToGenre(GenreName).
+iKnowItGenre(GenreName,Length,L) :- Length>0,
+									write("Conozco ese género. Actualmente tengo estos anime en la sección "),
+									write(GenreName),write(":"),nl,
+									ordRate(L,List),
+									printList(List).
+
+% Te puede gustar...
+youMayLike(GenreName) :- findall(X,anime(X),L),filtrarGenero(GenreName,L,Result),
+							length(Result,Length),youMayLike(GenreName,Length,Result).
+youMayLike(GenreName,0,_) :- iKnowItGenre(GenreName,0,_).
+youMayLike(_,Length,List) :- Length>0,
+									write("Puede que te gusten los siguiente animes."),
+									printList(List).
 
 %Preguntar popularidad y rating
-askPopularityRating :- write("¿Cuál es su rating y popularidad?"),nl,
-						write("Si no sabes la popularidad no me la digas, pero por favor dame las cosas en ese orden para no confundirme."),nl.
+askPopularityRatingGenre :- write("¿Cuál es su rating y género?"),nl,
+						write("Si no sabes la popularidad no me la digas, pero por favor dame las cosas en ese orden para no confundirme."),nl,
+						write("Orden: rating.... genero....popularidad"),nl,
+						write("Importante que pongas la palabra \"género\" para saber cual palabra quieres que tome.").
+
 
 % No conozco ese anime
 dontKnowAnime(AnimeName) :- write("¿"),write(AnimeName),
