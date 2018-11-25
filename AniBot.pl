@@ -151,10 +151,10 @@ ordPop([Anime|L], S):- ordPop(L, S1),
 %Predicado auxiliar que comprueba si un genero esta en la lista
 %de generos, si no lo agrega
 agregarGeneros([]).
+agregarGeneros([Genero|Generos]) :- genero(Genero),
+									agregarGeneros(Generos).
 agregarGeneros([Genero|Generos]) :- not(genero(Genero)),
 									assert(genero(Genero)),
-									agregarGeneros(Generos).
-agregarGeneros([Genero|Generos]) :- genero(Genero),
 									agregarGeneros(Generos).
 
 
