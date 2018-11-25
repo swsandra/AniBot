@@ -246,7 +246,8 @@ redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
 									concatStrListUpperFstLetter(M,X),
 									anime(X), rating(X,Rat),
 									popularidad(X,PopNum),giveStrPopularity(PopNum,Pop),
-									iKnowIt(X,Rat,Pop),red_continue.
+									generoAnime(X,GenresList),
+									iKnowIt(X,Rat,Pop,GenresList),red_continue.
 redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
 									concatStrListUpperFstLetter(M,X),
 									\+(anime(X)),
@@ -282,7 +283,9 @@ redirect(addAnime,[X]) :- askPopularityRatingGenre, readln(Info),
 						getNumberFromAtomList(Info,Rat),
 						findPopularity(Info,Pop),
 						findGenre(Info,Genre),
-						checkAnimeDetails(X,Rat,Pop,[Genre]),red_continue.
+						checkAnimeDetails(X,Rat,Pop,[Genre]),
+						addedSuccessfully(X,"Anime"),
+						red_continue.
 %%%%%		Agregar un genero, solo si el usuario confirma.
 redirect(addGenre,_) :- write("agregado genero"),nl,red_continue.
 redirect(bye,_) :- confirmExit;(iCoudlntLeave,red_continue).
@@ -305,7 +308,7 @@ confirmExit :- wannaLeaveAlready, readln(X),convertAtomListToStr(X,M),getHeadTai
 			   reallySureWannaLeave, readln(P),convertAtomListToStr(P,Mx),getHeadTail(Mx,Strx,_),(sayYes(Strx);letMeGo(Strx)),
 			   pleaseLetMeGo, red_fin.
 
-%Imprimir elementos de una lista
+%Imprimir elementos de una lista de anime en varias lineas
 printList([]).
 printList([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop), rating(L,Rat),
 						write("* "),write(L),
@@ -313,14 +316,18 @@ printList([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop), rating(L,Rat),
 						write(",  "),write(Pop),write("."),
 						nl,printList(List).
 
+%Imprimir elementos de una lista cualquiera en una linea, separadas por comas
+printListSingleLine([L]) :- write(L).
+printListSingleLine([L|List]) :- write(L),write(", "),printList(List).
+
 % Preguntar si agregar anime al genero
 askAddToGenre(GenreName) :- readln(X),convertAtomListToStr(X,M),getHeadTail(M,Str,_),sayYes(Str),
 							redirect(addAnime,GenreName).
 
 % Evaluar características dadas de un anime y redireccionar a agregar si datos correctos, de lo contrario fail
+checkAnimeDetails(Anime,Rat,0,Genres) :- agregarSinPop(Anime,Rat,Genres).
 checkAnimeDetails(Anime,Rat,Pop,Genres) :- agregarConPop(Anime,Rat,Pop,Genres).
-checkAnimeDetails(Anime,Rat,_,Genres) :- agregarSinPop(Anime,Rat,Genres).
-checkAnimeDetails(_,_,_) :- animeDetailsError.
+checkAnimeDetails(_,-1,0,"") :- animeDetailsError.
 
 % Palabras afirmativas
 sayYes(X) :- sub_string(X,_,_,_,Atom),member(Atom,["sí","si","yes","claro","dale","of course","si quieres"]).
@@ -414,13 +421,12 @@ getLowerPopularity(S,Number) :- \+(sub_string(S,_,_,_,"muy poco conocido")),
 								giveStrPopularity(Number,"conocido").
 
 % Encontrar el genero del input del usuario
-findGenre(Info,Genre) :- atomic_list_concat(Info,' ',Atom),downcase_atom(Atom,AtDown),
-						 atom_string(AtDown,Str), sub_string(Str,_,_,_,X),
-						 member(X,["género","genero","genre"]),
-						 convertAtomListToStr(Info, L),
-						 getGenre(L,Genre).
-getGenre([X,Genre|_],Genre) :- member(X,["género","genero","genre"]),
-								\+(member(Genre,[".",",",""," "])),!.
+findGenre([],"").
+findGenre([X|XS],Genre) :- atom_string(X,Str),member(Str,["género","genero","genre"]),
+							getHeadTail(XS,Head,_),convertToUpperAtom(Head,A),
+							atom_string(A,Genre),!.
+findGenre([X|XS],Genre) :- atom_string(X,Str),\+(member(Str,["género","genero","genre"])),
+							findGenre(XS,Genre).
 
 
 
@@ -465,9 +471,10 @@ getMemeOrPhrase(X) :- chooseRadom(["Eres más grande que tus problemas.",
 					X).
 
 % Conozco ese anime
-iKnowIt(Name,Rating,Popularity) :- write("Pues sí lo conozco. "),write(Name),write(" tiene de rating "),
-									write(Rating), write(" estrellas, es "),write(Popularity),
-									write("."),nl.
+iKnowIt(Name,Rating,Popularity,GenresList) :- write("Pues sí lo conozco. "),write(Name),write(" tiene de rating "),
+										write(Rating), write(" estrellas, es "),write(Popularity),
+										write(" y es de género(s): "),printListSingleLine(GenresList),
+										write("."),nl.
 
 % Conozco ese genero
 iKnowItGenre(GenreName) :- findall(X,anime(X),L),filtrarGenero(GenreName,L,Result),
@@ -492,7 +499,8 @@ youMayLike(_,Length,List) :- Length>0,
 askPopularityRatingGenre :- write("¿Cuál es su rating y género?"),nl,
 						write("Si no sabes la popularidad no me la digas, pero por favor dame las cosas en ese orden para no confundirme."),nl,
 						write("Orden: rating.... genero....popularidad"),nl,
-						write("Importante que pongas la palabra \"género\" para saber cual palabra quieres que tome.").
+						write("Importante que pongas la palabra \"género\" para saber cual palabra quieres que tome."),
+						nl.
 
 
 % No conozco ese anime
@@ -515,6 +523,10 @@ animeDetailsError :- write("Ha ocurrido un error, y seguro es porque me diste da
 					 write("muy poco conocido, poco conocido, conocido, muy conocido, bastante conocido."),nl,
 					 write("Como te dije, la popularidad no la necesito."),nl,
 					 write("Intenta de nuevo desde el principio."),nl,failed.
+
+% Agregado elemento con exito
+addedSuccessfully(Name,ListName) :- write("Ya agregé "),write(Name),write(" a mi lista de "),
+									write(ListName),nl.
 
 % Confirmar Salida
 wannaLeaveAlready :- write("¿Qué? ¿Ya te quieres ir? Pero si a apenas habíamos empezado a hablar :("), nl,
