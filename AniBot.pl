@@ -238,7 +238,7 @@ evaluateUserInput(L) :- convertStrListToStr_aux(L,Str),
 						findall(Num,between(Fst_Num,Scd_Num,Num),PopList),
 						filtrarPop(PopList,ListaAnime,ListaFiltrada),
 						write("Estos son los anime "),write(StrPop),write("s."),nl,
-						printListAnimeAll_withoutPop(ListaFiltrada),
+						printListAnimeAll_withoutPop(ListaOrdenada),
 						length(ListaFiltrada,Len),theresNothingHere(Len),
 						red_continue.
 evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
@@ -246,16 +246,18 @@ evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
 						write("¿Puedes repetirme el nombre del anime que quieres agregar? Es para anotarlo bien."),
 						readln(Line),atomic_list_concat(Line,' ',Atom),
 						atom_string(Atom,Anime),
-						redirect(addAnime,[Anime]).
+						redirect(addAnimeAux,[Anime]).
 evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
-						keywords(X,searchGenre),
-						redirect(searchSmth,["genero",X]).
+						keywords(X,searchSmth),cutInKeyWord(X,L,Result),
+						redirect(search,Result).
 evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
-						keywords(X,searchAnime),
-						redirect(searchSmth,["anime",X]).
-evaluateUserInput(L) :- getKeywords(L,P,RestOfList),
-						processOtherKeys(RestOfList,Tuple),
-						redirect(P,Tuple).
+						keywords(X,bye),redirect(bye,_).
+%evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
+%						keywords(X,searchAnime),
+%						redirect(searchSmth,["anime",X]).
+%evaluateUserInput(L) :- getKeywords(L,P,RestOfList),
+%						processOtherKeys(RestOfList,Tuple),
+%						redirect(P,Tuple).
 evaluateUserInput(L) :- convertStrListToStr(L,Str),dontKnow(Str), red_continue.
 
 % == Evaluación y respuesta
@@ -266,7 +268,8 @@ processOtherKeys([Mx|RestOfList],Result) :- string_lower(Mx,M),keywords(M,Z),
 											append([M],[A],Result),!.
 processOtherKeys([_|RestOfList],Result) :- processOtherKeys(RestOfList,Result).
 
-
+cutInKeyWord(Keyword,[Keyword|XS],XS).
+cutInKeyWord(Keyword,[_|XS],Result) :- cutInKeyWord(Keyword,XS,Result).
 
 
 
@@ -298,6 +301,14 @@ redirect(searchSmth,[Word|X]) :- (Word=="genero";Word=="género"),
 
 %%%%%		Para reconocer cualquier otra cosa que empezó con palabras como "sabes", se busca entre genero/anime
 %redirect(searchSmth,[Word|X]) :- \+(keywords(Word,searchAnimeOrGenre)),
+
+redirect(search,List) :- convertStrListToStr(List,Str),
+						 genero(Str),iKnowItGenre(Str),red_continue.
+redirect(search,List) :- convertStrListToStr(List,Xx),
+						 anime(X),string_lower(X,P),Xx==P,rating(X,Rat),
+						 popularidad(X,PopNum),giveStrPopularity(PopNum,Pop),
+						 generoAnime(X,GenresList),
+						 iKnowIt(X,Rat,Pop,GenresList),red_continue.
 
 %%%%%		Para agregar algo, donde debe reconocer qué agregar especificamente
 %%%%%%%%		Si es un Anime, preguntar datos solo si no lo conoce
@@ -344,11 +355,15 @@ redirect(filterRate,Rate) :- \+(between(1,5,Rate)),
 							 write("Bueno, espero que tengas más suerte dándome un rating la próxima vez."),nl,
 							 failed,red_continue.
 
+redirect(addAnimeAux,[X]) :- \+(anime(X)),
+							 redirect(addAnime,[X]).
+redirect(addAnimeAux,[X]) :- iKnowThatAlready(X,"anime"),red_continue. 
+
 %%%%%		Para salir del chatbot.
 redirect(bye,_) :- confirmExit;(iCoudlntLeave,red_continue).
 
 %%%%%		En cualquier otro caso, el chatbot no sabe que esta diciendo el usuario
-redirect(_,[_|X]) :- atomic_list_concat(X,'',L),dontKnow(L),red_continue.
+redirect(_,X) :- atomic_list_concat(X,'',L),dontKnow(L),red_continue.
 
 % == Redirección al inicio.
 red_continue :- chatbot("Continue").
@@ -419,7 +434,7 @@ askAddToGenre(GenreName) :- readln(X),convertAtomListToStr(X,M),getHeadTail(M,St
 
 % Evaluar características dadas de un anime y redireccionar a agregar si datos correctos, de lo contrario fail
 checkAnimeDetails(Anime,Rat,0,Genres,0) :- agregarSinPop(Anime,Rat,Genres).
-checkAnimeDetails(Anime,Rat,Pop,Genres,0) :- agregarConPop(Anime,Rat,Pop,Genres).
+checkAnimeDetails(Anime,Rat,Pop,Genres,0) :- agregarConPop(Anime,Rat,Genres,Pop).
 checkAnimeDetails(_,-1,0,"",-1) :- animeDetailsError.
 
 % Palabras afirmativas
