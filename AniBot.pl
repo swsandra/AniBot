@@ -116,7 +116,6 @@ filtrarPop(_, [], []).
 filtrarPop(Popularidad, [Anime|Animes], [Anime|L]) :- filtrarPop(Popularidad, Animes, L),
 												popularidad(Anime, Pop),
 												member(Pop,Popularidad).
-													
 filtrarPop(Popularidad, [Anime|Animes], L) :- filtrarPop(Popularidad, Animes, L),
 										popularidad(Anime, Pop),
 										not(member(Pop,Popularidad)).
@@ -211,11 +210,11 @@ chatbot("Stop").
 keywords(X,searchSmth) :- member(X, ["sabes","conoces","reconoces","conoce","reconoce","sabe","quiero","ves",
 									"veo","dame"]).
 keywords(X,searchAnimeOrGenre) :- member(X, ["anime","animé","genero","género"]).
-keywords(X,searchRating) :- member(X,["rating","interesante","bueno","malo"]).
 keywords(X,add) :- member(X,["agregar","incluir","add"]).
 keywords(X,bye) :- member(X,["chao","adios","bye","halt"]).
-keywords(X,searchAnime) :- convertToUpperFstLetterString(X,M),anime(M).
-keywords(X,searchGenre) :- convertToUpperFstLetterString(X,M),genero(M).
+keywords(X,searchAnime) :- string_lower(X,Xx),anime(M),string_lower(M,Mm),Xx==Mm.
+keywords(X,searchGenre) :- string_lower(X,Xx),anime(M),string_lower(M,Mm),Xx==Mm.
+keywordsEspecial(X,searchRating) :- member(X,["estrella","estrellas","rating","interesante","bueno","malo","medio","super malo"]).
 
 % == Funcion para encontrar la primera palabra clave
 getKeywords([X|XS],Result,XS) :- keywords(X,Result),!.
@@ -225,33 +224,68 @@ getKeywords([_|XS],Result,Z) :- getKeywords(XS,Result,Z).
 %%		Recibe L (lista de atoms conseguida el input) y la recorre para encontrar
 %%		palabras clave, y redirigir a alguna accion (primer predicado) o al
 %%		predicado que muestre el mensaje correspondiente a no entender el input.
+evaluateUserInput(L) :- convertStrListToStr_aux(L,Str),
+						sub_string(Str,_,_,_,X),keywordsEspecial(X,searchRating),
+						atom_string(Str,Atom),atomic_list_concat(AtomList,' ',Atom),
+						getNumberFromAtomList(AtomList,Rate),
+						redirect(filterRate,Rate).
+evaluateUserInput(L) :- convertStrListToStr_aux(L,Str),
+						sub_string(Str,_,_,_,"conocido"),
+						findPopularity(L,Pop),between(1,10,Pop),
+						giveStrPopularity(Pop,StrPop),
+						findall(X,anime(X),ListaAnime),
+						getPopularityRange(Pop,Fst_Num,Scd_Num),
+						findall(Num,between(Fst_Num,Scd_Num,Num),PopList),
+						filtrarPop(PopList,ListaAnime,ListaFiltrada),
+						write("Estos son los anime "),write(StrPop),write("s."),nl,
+						printListAnimeAll_withoutPop(ListaFiltrada),
+						length(ListaFiltrada,Len),theresNothingHere(Len),
+						red_continue.
+evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
+						keywords(X,add),
+						write("¿Puedes repetirme el nombre del anime que quieres agregar? Es para anotarlo bien."),
+						readln(Line),atomic_list_concat(Line,' ',Atom),
+						atom_string(Atom,Anime),
+						redirect(addAnime,[Anime]).
+evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
+						keywords(X,searchGenre),
+						redirect(searchSmth,["genero",X]).
+evaluateUserInput(L) :- convertStrListToStr(L,Str),sub_string(Str,_,_,_,X),
+						keywords(X,searchAnime),
+						redirect(searchSmth,["anime",X]).
 evaluateUserInput(L) :- getKeywords(L,P,RestOfList),
 						processOtherKeys(RestOfList,Tuple),
 						redirect(P,Tuple).
-evaluateUserInput(L) :- dontKnow(L), red_continue.
-
+evaluateUserInput(L) :- convertStrListToStr(L,Str),dontKnow(Str), red_continue.
 
 % == Evaluación y respuesta
-processOtherKeys([],_).
-processOtherKeys([Mx|RestOfList],Result) :- string_lower(Mx,M),keywords(M,searchAnimeOrGenre),
+processOtherKeys([],[]).
+processOtherKeys([Mx|RestOfList],Result) :- string_lower(Mx,M),keywords(M,Z),
+											member(Z,[searchSmth,searchAnimeOrGenre]),
 											convertStrListToStr(RestOfList, A),
 											append([M],[A],Result),!.
 processOtherKeys([_|RestOfList],Result) :- processOtherKeys(RestOfList,Result).
 
 
-% == Redireccion a alguna funcionalidad
+
+
+
+% ----- Redireccion a alguna funcionalidad
+
 %%		Reciben la accion a realizar, y el input restante luego de la palabra clave.
+
 %%%%% 		Para reconocer anime o, en caso contrario, redireccionar a agregar.
 redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
-									concatStrListUpperFstLetter(M,X),
-									anime(X), rating(X,Rat),
+									convertStrListToStr(M,Str),
+									anime(X), string_lower(X,Str), rating(X,Rat),
 									popularidad(X,PopNum),giveStrPopularity(PopNum,Pop),
 									generoAnime(X,GenresList),
 									iKnowIt(X,Rat,Pop,GenresList),red_continue.
 redirect(searchSmth,[Word|M]) :- (Word=="anime";Word=="animé"),
-									concatStrListUpperFstLetter(M,X),
-									\+(anime(X)),
+									convertStrListToStr(M,Str),
+									anime(X),\+(string_lower(X,Str)),
 									dontKnowAnime(X),redirect(addAnime,[X]).
+
 %%%%% 		Para reconocer genero o, en caso contrario, agregar.
 redirect(searchSmth,[Word|X]) :- (Word=="genero";Word=="género"),
 									concatStrListUpperFstLetter(X,M), genero(M),
@@ -261,7 +295,12 @@ redirect(searchSmth,[Word|X]) :- (Word=="genero";Word=="género"),
 									concatStrListUpperFstLetter(X,M), \+(genero(M)),
 									dontKnowGenre(M),readln(Info),
 									redirect(addGenre,[Info]).
+
+%%%%%		Para reconocer cualquier otra cosa que empezó con palabras como "sabes", se busca entre genero/anime
+%redirect(searchSmth,[Word|X]) :- \+(keywords(Word,searchAnimeOrGenre)),
+
 %%%%%		Para agregar algo, donde debe reconocer qué agregar especificamente
+%%%%%%%%		Si es un Anime, preguntar datos solo si no lo conoce
 redirect(add,[Word|M]) :- (Word=="anime";Word=="animé"),
 							concatStrListUpperFstLetter(M,X),
 							\+(anime(X)),
@@ -270,6 +309,7 @@ redirect(add,[Word|M]) :- (Word=="anime";Word=="animé"),
 							concatStrListUpperFstLetter(M,X),
 							anime(X),
 							iKnowThatAlready(X,"anime"),red_continue.
+%%%%%%%%		Si es un Genero, agregar solo si no lo conoce
 redirect(add,[Word|M]) :- (Word=="genero";Word=="género"),
 							concatStrListUpperFstLetter(M,X),
 							\+(genero(X)),
@@ -278,18 +318,37 @@ redirect(add,[Word|M]) :- (Word=="genero";Word=="género"),
 							concatStrListUpperFstLetter(M,X),
 							genero(X),
 							iKnowThatAlready(X,"género"),red_continue.
-%%%%%		Agregar un anime dado sus datos, solo si son validos, de lo contrario redireccionar a fallo.
+
+%%%%%		Para agregar un anime pidiendo sus datos, solo si éstos son validos, de lo contrario redireccionar a fallo.
 redirect(addAnime,[X]) :- askPopularityRatingGenre, readln(Info),
 						getNumberFromAtomList(Info,Rat),
 						findPopularity(Info,Pop),
 						findGenre(Info,Genre),
-						checkAnimeDetails(X,Rat,Pop,[Genre]),
-						addedSuccessfully(X,"Anime"),
+						checkAnimeDetails(X,Rat,Pop,[Genre],CodigoError),
+						addedSuccessfully(CodigoError,X,"Anime"),
 						red_continue.
-%%%%%		Agregar un genero, solo si el usuario confirma.
+
+%%%%%		Para agregar un genero, solo si el usuario confirma.
 redirect(addGenre,_) :- write("agregado genero"),nl,red_continue.
+
+%%%%%		Para filtrar todos los anime por un rating dado, sólo si es válido, de lo contrario redireccionar a fail.
+redirect(filterRate,Rate) :- between(1,5,Rate),findall(X,anime(X),L),
+							 filtrarRate(Rate,L,ListaFiltrada),
+							 write("Estos son los anime con "),write(Rate),
+							 write(" estrellas."),nl,
+							 printListAnimeAll_withoutRate(ListaFiltrada),
+							 length(ListaFiltrada,Len),theresNothingHere(Len),
+							 red_continue.
+redirect(filterRate,Rate) :- \+(between(1,5,Rate)),
+							 write("Epa, el rating que me diste no tiene sentido. Dame un número del 1 al 5."),nl,
+							 write("Bueno, espero que tengas más suerte dándome un rating la próxima vez."),nl,
+							 failed,red_continue.
+
+%%%%%		Para salir del chatbot.
 redirect(bye,_) :- confirmExit;(iCoudlntLeave,red_continue).
-redirect(_,[_|X]) :- getHeadTail(X,L,_),dontKnow(L),red_continue.
+
+%%%%%		En cualquier otro caso, el chatbot no sabe que esta diciendo el usuario
+redirect(_,[_|X]) :- atomic_list_concat(X,'',L),dontKnow(L),red_continue.
 
 % == Redirección al inicio.
 red_continue :- chatbot("Continue").
@@ -303,31 +362,65 @@ red_fin :- chatbot("Stop").
 
 %%% ----- Otros predicados usadas fuera no relacionadas directamente con evaluateUserInput
 
+% Concatenar atoms de manera segura
+atomic_list_concat_secure([],_).
+atomic_list_concat_secure([X],X).
+atomic_list_concat_secure([X|XS],Atom) :- atomic_list_concat_secure(XS,R),
+										  \+((R==''),\+(X=='')),
+										  atomic_list_concat([X|R],' ',Atom).
+atomic_list_concat_secure([X|XS],X) :- atomic_list_concat_secure(XS,R),
+										  R=='',\+(X=='').
+atomic_list_concat_secure([''|XS],R) :- atomic_list_concat_secure(XS,R),
+										  \+(R=='').
+atomic_list_concat_secure([''|XS],'') :- atomic_list_concat_secure(XS,R),
+										  R==''.
+
+
 % Confirmar salida del programa
 confirmExit :- wannaLeaveAlready, readln(X),convertAtomListToStr(X,M),getHeadTail(M,Str,_),(sayYes(Str);letMeGo(Str)),
 			   reallySureWannaLeave, readln(P),convertAtomListToStr(P,Mx),getHeadTail(Mx,Strx,_),(sayYes(Strx);letMeGo(Strx)),
 			   pleaseLetMeGo, red_fin.
 
-%Imprimir elementos de una lista de anime en varias lineas
-printList([]).
-printList([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop), rating(L,Rat),
-						write("* "),write(L),
-						write(" :   rating="),write(Rat),
-						write(",  "),write(Pop),write("."),
-						nl,printList(List).
+%Imprimir elementos de una lista de anime sin su popularidad
+printListAnimeAll_withoutPop([]).
+printListAnimeAll_withoutPop([L|List]) :- rating(L,Rat), generoAnime(L,Genres),
+								write("* "),write(L),
+								write(" :   rating="),write(Rat),
+								write(", y tiene de género(s) "),
+								printListSingleLine(Genres),
+								write("."),
+								nl,printListAnimeAll_withoutPop(List).
+
+%Imprimir elementos de una lista de anime sin sus estrellas
+printListAnimeAll_withoutRate([]).
+printListAnimeAll_withoutRate([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop),generoAnime(L,Genres),
+								write("* "),write(L),
+								write(",  "),write(Pop),
+								write(" y tiene de género(s) "),
+								printListSingleLine(Genres),
+								write("."),
+								nl,printListAnimeAll_withoutRate(List).
+
+%Imprimir elementos de una lista de anime sin sus generos en varias lineas
+printListAnimeAll_withoutGenre([]).
+printListAnimeAll_withoutGenre([L|List]) :- popularidad(L,P),giveStrPopularity(P,Pop), rating(L,Rat),
+								write("* "),write(L),
+								write(" :   rating="),write(Rat),
+								write(",  "),write(Pop),write("."),
+								nl,printListAnimeAll_withoutGenre(List).
 
 %Imprimir elementos de una lista cualquiera en una linea, separadas por comas
 printListSingleLine([L]) :- write(L).
-printListSingleLine([L|List]) :- write(L),write(", "),printList(List).
+printListSingleLine([L|List]) :- write(L),write(", "),printListSingleLine(List).
 
 % Preguntar si agregar anime al genero
 askAddToGenre(GenreName) :- readln(X),convertAtomListToStr(X,M),getHeadTail(M,Str,_),sayYes(Str),
 							redirect(addAnime,GenreName).
 
 % Evaluar características dadas de un anime y redireccionar a agregar si datos correctos, de lo contrario fail
-checkAnimeDetails(Anime,Rat,0,Genres) :- agregarSinPop(Anime,Rat,Genres).
-checkAnimeDetails(Anime,Rat,Pop,Genres) :- agregarConPop(Anime,Rat,Pop,Genres).
-checkAnimeDetails(_,-1,0,"") :- animeDetailsError.
+checkAnimeDetails(Anime,Rat,0,Genres,0) :- agregarSinPop(Anime,Rat,Genres).
+checkAnimeDetails(Anime,Rat,Pop,Genres,0) :- agregarConPop(Anime,Rat,Pop,Genres).
+checkAnimeDetails(_,-1,0,"",-1) :- animeDetailsError.
 
 % Palabras afirmativas
 sayYes(X) :- sub_string(X,_,_,_,Atom),member(Atom,["sí","si","yes","claro","dale","of course","si quieres"]).
@@ -346,18 +439,32 @@ giveStrPopularity(Number,"conocido") :- between(6,7,Number).
 giveStrPopularity(Number,"muy conocido") :- between(8,9,Number).
 giveStrPopularity(Number,"bastante conocido") :- between(10,10,Number).
 
+% Retornar el inicio del rango y final del rango para la popularidad correspondiente
+getPopularityRange(Number,1,2) :- between(1,2,Number).
+getPopularityRange(Number,3,5) :- between(3,5,Number).
+getPopularityRange(Number,6,7) :- between(6,7,Number).
+getPopularityRange(Number,8,9) :- between(8,9,Number).
+getPopularityRange(Number,10,10) :- between(10,10,Number).
+
 % Retornar head y tail de una lista.
 getHeadTail([X|[]],X,[]).
 getHeadTail([],[],[]).
 getHeadTail([X|XS],X,XS).
 
 % Convertir Lista de Atoms a lista de String.
+convertAtomListToStr([],[]).
 convertAtomListToStr(Atoms,Result) :- atomic_list_concat(Atoms, ' ', A),
 									  atom_string(A,S),
 									  split_string(S," ","",Result).
 
 % Concatenar en un solo string una lista de string
 convertStrListToStr(List,A) :- convertStrListToAtomList(List,Atoms),
+							   atomic_list_concat(Atoms, ' ', M),
+							   atom_string(M,A).
+
+
+% Concatenar en un solo string una lista de string (aux)
+convertStrListToStr_aux(List,A) :- convertStrListToAtomList(List,Atoms),
 							   atomic_list_concat(Atoms, ' ', M),
 							   atom_string(M,A).
 
@@ -373,10 +480,10 @@ convertToUpperFstLetterString(String,Result) :- atom_string(String,A),atomic_lis
 												atom_string(FullAtom,Result).
 
 % Convertir la primera letra de cada atomo de una lista a uppercase
-convertToUpperFstLetterList(List,[AtomResult|Result]) :- getHeadTail(List,X,XS), \+(X==[]),
+convertToUpperFstLetterList(List,[AtomResult|Result]) :- getHeadTail(List,X,XS), \+(X==""),
 														 convertToUpperFstLetterList(XS,Result),
 														 convertToUpperAtom(X,AtomResult).
-convertToUpperFstLetterList([X],[X]).
+convertToUpperFstLetterList([X],[AtomResult]) :- convertToUpperAtom(X,AtomResult).
 convertToUpperFstLetterList([],[]).
 
 % Convertir primera letra de un atomo de uppercase.
@@ -390,8 +497,10 @@ concatStrListUpperFstLetter(X,Result) :- convertStrListToAtomList(X,P),
 								 convertToUpperFstLetterString(S,Result).
 
 % Encontrar un numero en una lista de atomos.
+getNumberFromAtomList([A|_],A) :- number(A),!.
+getNumberFromAtomList([A|_],M) :- atom_number(A,M),!.
+getNumberFromAtomList([_|AS],Num) :- getNumberFromAtomList(AS,Num).
 getNumberFromAtomList([],-1).
-getNumberFromAtomList([A|_],A) :- number(A).
 
 % Encontrar popularidad en una lista de atomos, lenguaje natural
 findPopularity(List,Pop) :- atomic_list_concat(List,' ',Au),downcase_atom(Au,A),atom_string(A,S),
@@ -449,7 +558,7 @@ sayHello :- write("¡Hola! Estoy aquí para guiarte en el mundo del Anime. Habla
 			nl.
 
 % No sé de qué habla
-dontKnow(Str) :- write("Lo siento, no sé nada acerca de "), write(Str), write(". Sólo sé de Anime."), nl,
+dontKnow(Str) :- write("Lo siento, no sé qué quisiste decir con \'"), write(Str), write("\'. Mejor intenta de nuevo."), nl,
 				 failed.
 				
 
@@ -485,7 +594,7 @@ iKnowItGenre(GenreName,Length,L) :- Length>0,
 									write("Conozco ese género. Actualmente tengo estos anime en la sección "),
 									write(GenreName),write(":"),nl,
 									ordRate(L,List),
-									printList(List).
+									printListAnimeAll_withoutGenre(List).
 
 % Te puede gustar...
 youMayLike(GenreName) :- findall(X,anime(X),L),filtrarGenero(GenreName,L,Result),
@@ -524,9 +633,15 @@ animeDetailsError :- write("Ha ocurrido un error, y seguro es porque me diste da
 					 write("Como te dije, la popularidad no la necesito."),nl,
 					 write("Intenta de nuevo desde el principio."),nl,failed.
 
-% Agregado elemento con exito
-addedSuccessfully(Name,ListName) :- write("Ya agregé "),write(Name),write(" a mi lista de "),
-									write(ListName),nl.
+% Agregado elemento con exito (imprimir mensaje de exito solo si CodigoError==0)
+addedSuccessfully(0,Name,ListName) :- write("Ya agregé "),write(Name),write(" a mi lista de "),
+									write(ListName),write("."),nl.
+addedSuccessfully(-1,_,_).
+
+% No hay nada en esta lista
+theresNothingHere(0) :- write("Oh no, no tengo nada aquí :/"),
+						nl,write("Intenta mejor con otra cosa."),nl.
+theresNothingHere(_).
 
 % Confirmar Salida
 wannaLeaveAlready :- write("¿Qué? ¿Ya te quieres ir? Pero si a apenas habíamos empezado a hablar :("), nl,
